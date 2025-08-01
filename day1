@@ -1,0 +1,48 @@
+%%writefile vectorAdd.cu
+#include <iostream>
+#include <cuda_runtime.h>
+
+__global__ void vectorAdd(const float* g, const float* h, float* t, int y) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < y) {
+        t[i] = g[i] + h[i];
+    }
+}
+
+int main() {
+    const int y = 10;  // vector size
+    float g[y], h[y], t[y];
+
+    // Initialize vectors
+    for (int i = 0; i < y; i++) {
+        g[i] = i * 1.0f;
+        h[i] = i * 2.0f;
+    }
+
+    float *dg, *dh, *dt;
+    cudaMalloc(&dg, y * sizeof(float));
+    cudaMalloc(&dh, y * sizeof(float));
+    cudaMalloc(&dt, y * sizeof(float));
+
+    cudaMemcpy(dg, g, y * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(dh, h, y * sizeof(float), cudaMemcpyHostToDevice);
+
+    int blocksize = 256;
+    int gridsize = (y + blocksize - 1) / blocksize;
+
+    vectorAdd<<<gridsize, blocksize>>>(dg, dh, dt, y);
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(t, dt, y * sizeof(float), cudaMemcpyDeviceToHost);
+
+    std::cout << "Result (t = g + h):\n";
+    for (int i = 0; i < y; i++) {
+        std::cout << t[i] << " ";
+    }
+    std::cout << std::endl;
+
+    cudaFree(dg);
+    cudaFree(dh);
+    cudaFree(dt);
+    return 0;
+}
