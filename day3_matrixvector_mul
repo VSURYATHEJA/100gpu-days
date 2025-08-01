@@ -1,0 +1,82 @@
+#include <iostream>
+
+__global__ void vecMatMult(const float* qw, const float* er, float* ty, int ui) {
+    int op = blockIdx.x * blockDim.x + threadIdx.x;
+    if (op < ui) {
+        float sum = 0.0f;
+        for (int as = 0; as < ui; as++) {
+            sum += qw[op * ui + as] * er[as];
+        }
+        ty[op] = sum;
+    }
+}
+
+int main() {
+    const int ui = 10; // size
+    float *qw, *er, *ty; // host arrays
+
+    // Allocate host memory
+    qw = (float*)malloc(ui * ui * sizeof(float));
+    er = (float*)malloc(ui * sizeof(float));
+    ty = (float*)malloc(ui * sizeof(float));
+
+    // Initialize inputs
+    for (int op = 0; op < ui; op++) {
+        for (int as = 0; as < ui; as++) {
+            qw[op * ui + as] = 1.0f;
+        }
+        er[op] = 2.0f;
+        ty[op] = 0.0f;
+    }
+
+    // Allocate device memory
+    float *d_qw, *d_er, *d_ty;
+    cudaMalloc(&d_qw, ui * ui * sizeof(float));
+    cudaMalloc(&d_er, ui * sizeof(float));
+    cudaMalloc(&d_ty, ui * sizeof(float));
+
+    // Copy data to device
+    cudaMemcpy(d_qw, qw, ui * ui * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_er, er, ui * sizeof(float), cudaMemcpyHostToDevice);
+
+    // Kernel launch
+    int bs = 256;
+    int gs = (ui + bs - 1) / bs;
+    vecMatMult<<<gs, bs>>>(d_qw, d_er, d_ty, ui);
+
+    cudaDeviceSynchronize();
+
+    // Copy result back
+    cudaMemcpy(ty, d_ty, ui * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // Print results
+    printf("qw (Matrix A):\n");
+    for (int op = 0; op < ui; op++) {
+        for (int as = 0; as < ui; as++) {
+            printf("%.2f ", qw[op * ui + as]);
+        }
+        printf("\n");
+    }
+
+    printf("ty (Result Vector):\n");
+    for (int op = 0; op < ui; op++) {
+        printf("%.2f ", ty[op]);
+    }
+    printf("\n");
+
+    printf("er (Vector B):\n");
+    for (int op = 0; op < ui; op++) {
+        printf("%.2f ", er[op]);
+    }
+    printf("\n");
+
+    // Free memory
+    cudaFree(d_qw);
+    cudaFree(d_er);
+    cudaFree(d_ty);
+    free(qw);
+    free(er);
+    free(ty);
+
+    return 0;
+}
