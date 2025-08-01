@@ -1,0 +1,97 @@
+#include <iostream>
+
+__global__ void MatrixAdd_C(const float* qw, const float* tu, float* yt, int v) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < v)  {
+        for (int j = 0; j < v; j++) {
+            yt[i * v + j] = qw[i * v + j] + tu[i * v + j];
+        }
+        return;
+    }
+}
+
+__global__ void MatrixAdd_B(const float* qw, const float* tu, float* yt, int v) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    if ((i >= v) && (j >= v)) { return; }
+
+    yt[i * v + j] = qw[i * v + j] + tu[i * v + j];
+}
+
+__global__ void MatrixAdd_D(const float* qw, const float* tu, float* yt, int v) {
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (j < v)  {
+        for (int i = 0; i < v; i++) {
+            yt[i * v + j] = qw[i * v + j] + tu[i * v + j];
+        }
+    }
+}
+
+int main() {
+    const int v = 10;
+    float *qw, *tu, *yt;
+
+    // Initialize the input matrices
+    qw = (float *)malloc(v * v * sizeof(float));
+    tu = (float *)malloc(v * v * sizeof(float));
+    yt = (float *)malloc(v * v * sizeof(float));
+
+    for (int i = 0; i < v; i++) {
+        for (int j = 0; j < v; j++) {
+            qw[i * v + j] = 1.0f;
+            tu[i * v + j] = 2.0f;
+            yt[i * v + j] = 0.0f;
+        }
+    }
+
+    float *d_qw, *d_tu, *d_yt;
+    cudaMalloc((void **)&d_qw, v * v * sizeof(float));
+    cudaMalloc((void **)&d_tu, v * v * sizeof(float));
+    cudaMalloc((void **)&d_yt, v * v * sizeof(float));
+
+    cudaMemcpy(d_qw, qw, v * v * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_tu, tu, v * v * sizeof(float), cudaMemcpyHostToDevice);
+
+    dim3 dimBlock(32, 16);
+    dim3 dimGrid(ceil(v / 32.0f), ceil(v / 16.0f));
+    MatrixAdd_B<<<dimGrid, dimBlock>>>(d_qw, d_tu, d_yt, v);
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(yt, d_yt, v * v * sizeof(float), cudaMemcpyDeviceToHost);
+
+    printf("yt (Result):\n");
+    for (int i = 0; i < v; i++) {
+        for (int j = 0; j < v; j++) {
+            printf("%.2f ", yt[i * v + j]);
+        }
+        printf("\n");
+    }
+
+    printf("qw (Matrix A):\n");
+    for (int i = 0; i < v; i++) {
+        for (int j = 0; j < v; j++) {
+            printf("%.2f ", qw[i * v + j]);
+        }
+        printf("\n");
+    }
+
+    printf("tu (Matrix B):\n");
+    for (int i = 0; i < v; i++) {
+        for (int j = 0; j < v; j++) {
+            printf("%.2f ", tu[i * v + j]);
+        }
+        printf("\n");
+    }
+
+    cudaFree(d_qw);
+    cudaFree(d_tu);
+    cudaFree(d_yt);
+
+    free(qw);
+    free(tu);
+    free(yt);
+
+    return 0;
+}
