@@ -1,0 +1,96 @@
+#include <iostream>
+#include <cuda_runtime.h>
+
+#define KERNEL_SIZE 5  
+__constant__ float d_kernel[KERNEL_SIZE]; // Kernel in constant memory
+
+// CUDA Kernel for 1D convolution (no tiling)
+__global__ void convolution1D(const float* d_input, float* d_output, int length) {
+    int threadId = threadIdx.x;
+    int idx = blockDim.x * blockIdx.x + threadId;
+
+    if (idx < length) {
+        float sum = 0.0f;
+
+        // Apply convolution kernel
+        for (int k = -KERNEL_SIZE / 2; k <= KERNEL_SIZE / 2; ++k) {
+            int neighborIdx = idx + k;
+            if (neighborIdx >= 0 && neighborIdx < length) {
+                sum += d_input[neighborIdx] * d_kernel[k + KERNEL_SIZE / 2];
+            }
+        }
+
+        d_output[idx] = sum;
+    }
+}
+
+// Function to check CUDA errors
+void checkCudaError(const char* message) {
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        std::cerr << message << " - CUDA Error: " << cudaGetErrorString(error) << std::endl;
+        exit(EXIT_FAILURE);
+    }
+}
+
+int main() {
+    const int length = 10;
+    float h_input[length], h_output[length], h_kernel[KERNEL_SIZE];
+
+    // Initialize kernel values
+    for (int i = 0; i < KERNEL_SIZE; ++i) {
+        h_kernel[i] = static_cast<float>(i);
+    }
+
+    // Initialize input array
+    for (int i = 0; i < length; ++i) {
+        h_input[i] = static_cast<float>(i);
+    }
+
+    // Allocate device memory
+    float *d_input, *d_output;
+    cudaMalloc(&d_input, length * sizeof(float));
+    cudaMalloc(&d_output, length * sizeof(float));
+
+    // Copy input data and kernel to device
+    cudaMemcpy(d_input, h_input, length * sizeof(float), cudaMemcpyHostToDevice);
+    checkCudaError("Failed to copy input data to device");
+
+    cudaMemcpyToSymbol(d_kernel, h_kernel, KERNEL_SIZE * sizeof(float));
+    checkCudaError("Failed to copy kernel to device");
+
+    // Kernel configuration
+    dim3 blockDim(32);
+    dim3 gridDim((length + blockDim.x - 1) / blockDim.x);
+
+    // Launch kernel
+    convolution1D<<<gridDim, blockDim>>>(d_input, d_output, length);
+    checkCudaError("Kernel execution failed");
+
+    cudaDeviceSynchronize();
+
+    // Copy results back to host
+    cudaMemcpy(h_output, d_output, length * sizeof(float), cudaMemcpyDeviceToHost);
+    checkCudaError("Failed to copy output data to host");
+
+    // Free device memory
+    cudaFree(d_input);
+    cudaFree(d_output);
+
+    // Display results
+    std::cout << "Input Array:\n";
+    for (int i = 0; i < length; ++i) {
+        std::cout << h_input[i] << " ";
+    }
+    std::cout << "\n\nKernel:\n";
+    for (int i = 0; i < KERNEL_SIZE; ++i) {
+        std::cout << h_kernel[i] << " ";
+    }
+    std::cout << "\n\nOutput Array:\n";
+    for (int i = 0; i < length; ++i) {
+        std::cout << h_output[i] << " ";
+    }
+    std::cout << "\n";
+
+    return 0;
+}
